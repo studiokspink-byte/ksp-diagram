@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import { useEdges, useReactFlow, useViewport, EdgeLabelRenderer } from 'reactflow';
+import { lockToAxis } from './geometry';
+import { edgeEndpoints } from './connect';
 
 // Shared module-level registry of active edge straight-segment points.
 // Used to calculate intersections between overlapping lines.
@@ -127,6 +129,8 @@ const findClosestDistOnPolyline = (segs, totalLen, fx, fy) => {
 
 export default function CustomEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -143,11 +147,27 @@ export default function CustomEdge({
   labelBgBorderRadius,
 }) {
   const edges = useEdges();
-  const { setEdges, setNodes } = useReactFlow();
+  const { setEdges, setNodes, getNode } = useReactFlow();
   const { x: vpX, y: vpY, zoom: vpZoom } = useViewport();
 
   const bendPoints = data?.bendPoints || [];
-  const points = [{ x: sourceX, y: sourceY }, ...bendPoints, { x: targetX, y: targetY }];
+
+  // 図形の辺に置いたアンカーがあれば、ノードの現在の寸法から端点を計算し直す。
+  // （ノードをリサイズしても端点が辺に付いてくる）
+  const { x: sx, y: sy, x2: tx, y2: ty } = (() => {
+    const p = edgeEndpoints({
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      sourceNode: getNode(source),
+      targetNode: getNode(target),
+      data,
+    });
+    return { x: p.sx, y: p.sy, x2: p.tx, y2: p.ty };
+  })();
+
+  const points = [{ x: sx, y: sy }, ...bendPoints, { x: tx, y: ty }];
 
   // Register clean path points during render and clean up on unmount
   renderedEdgesRegistry.set(id, points);
@@ -206,9 +226,6 @@ export default function CustomEdge({
   const labelFontSize = typeof labelStyle?.fontSize === 'number' ? labelStyle.fontSize : 8;
   const labelCharCount = label ? label.length : 0;
   const labelHalfWidth = label ? (labelFontSize * 0.6 * labelCharCount) / 2 + 4 : 0;
-  const labelGapPadding = 3;
-  const halfGap = labelHalfWidth + labelGapPadding;
-
   const labelHeight = labelFontSize * 1.4 + 4;
 
   const takeSnapshot = () => {
@@ -312,34 +329,17 @@ export default function CustomEdge({
       let flowY = (moveEvent.clientY - rect.top - vpY) / vpZoom;
 
       if (moveEvent.altKey) {
-        const otherPoints = [
-          { x: sourceX, y: sourceY },
-          ...bendPoints.filter((_, idx) => idx !== index),
-          { x: targetX, y: targetY }
-        ];
-        const threshold = 10;
-        let snappedX = flowX;
-        let snappedY = flowY;
-
-        for (const pt of otherPoints) {
-          if (Math.abs(flowX - pt.x) < threshold) {
-            snappedX = pt.x;
-            break;
-          }
-        }
-        for (const pt of otherPoints) {
-          if (Math.abs(flowY - pt.y) < threshold) {
-            snappedY = pt.y;
-            break;
-          }
-        }
-        flowX = snappedX;
-        flowY = snappedY;
+        // Alt: 直前の点からの軸拘束（水平／垂直）＋近くの点への吸着。
+        // 吸着した値は丸め直さない（丸めると最大 0.5px ずれて線が傾く）。
+        const origin = points[index];
+        const references = points.filter((_, idx) => idx !== index + 1);
+        const locked = lockToAxis({ x: flowX, y: flowY }, origin, references, 8 / vpZoom);
+        flowX = locked.x;
+        flowY = locked.y;
       }
 
-      const snap = (v) => Math.round(v);
-      const snappedX = snap(flowX);
-      const snappedY = snap(flowY);
+      const snappedX = flowX;
+      const snappedY = flowY;
 
       setEdges(eds => eds.map(edge => {
         if (edge.id === id) {
@@ -388,34 +388,15 @@ export default function CustomEdge({
       let flowY = (moveEvent.clientY - rect.top - vpY) / vpZoom;
 
       if (moveEvent.altKey) {
-        const otherPoints = [
-          { x: sourceX, y: sourceY },
-          ...bendPoints,
-          { x: targetX, y: targetY }
-        ];
-        const threshold = 10;
-        let snappedX = flowX;
-        let snappedY = flowY;
-
-        for (const pt of otherPoints) {
-          if (Math.abs(flowX - pt.x) < threshold) {
-            snappedX = pt.x;
-            break;
-          }
-        }
-        for (const pt of otherPoints) {
-          if (Math.abs(flowY - pt.y) < threshold) {
-            snappedY = pt.y;
-            break;
-          }
-        }
-        flowX = snappedX;
-        flowY = snappedY;
+        // 折れ点を追加した直後も、直前の点から水平／垂直に拘束する
+        const origin = points[insertIndex];
+        const locked = lockToAxis({ x: flowX, y: flowY }, origin, points, 8 / vpZoom);
+        flowX = locked.x;
+        flowY = locked.y;
       }
 
-      const snap = (v) => Math.round(v);
-      const snappedX = snap(flowX);
-      const snappedY = snap(flowY);
+      const snappedX = flowX;
+      const snappedY = flowY;
 
       setEdges(eds => eds.map(edge => {
         if (edge.id === id) {

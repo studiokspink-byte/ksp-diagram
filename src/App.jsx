@@ -1,10 +1,14 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 // ★修正：Handle と Position をインポートに追加
-import ReactFlow, { Controls, addEdge, applyNodeChanges, applyEdgeChanges, useViewport, Handle, Position } from 'reactflow';
+import ReactFlow, { Controls, addEdge, applyNodeChanges, applyEdgeChanges, useViewport, Handle, Position, ConnectionMode } from 'reactflow';
 import 'reactflow/dist/style.css';
 import DeviceNode from './DeviceNode';
 import ShapeNode from './ShapeNode';
 import CustomEdge from './CustomEdge';
+import CustomConnectionLine from './CustomConnectionLine';
+import { nodeRect } from './geometry';
+import { planConnect } from './connect';
+import { setAltDown, isAltDown, setConnectionFrame, getConnectionFrame } from './connectionState';
 import { jsPDF } from 'jspdf';
 import { toPng, toJpeg } from 'html-to-image';
 import { 
@@ -194,6 +198,27 @@ export default function App() {
 
   const isRemoteUpdatingRef = useRef(false);
   const saveDebounceTimerRef = useRef(null);
+
+  // 接続線を引くときの状態（Alt 押下 / カーソル位置 / ドラッグ開始位置）
+  const pointerRef = useRef(null);
+  const connectStartRef = useRef(null);
+
+  // Alt キーの押下状態は、接続線のプレビューと確定処理の両方から参照する
+  useEffect(() => {
+    const onKey = (e) => { setAltDown(e.altKey); };
+    const onPointer = (e) => { setAltDown(e.altKey); pointerRef.current = { x: e.clientX, y: e.clientY }; };
+    const onBlur = () => { setAltDown(false); };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    window.addEventListener('pointermove', onPointer);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+      window.removeEventListener('pointermove', onPointer);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 
   // 1. Firebase Auth 認証状態の監視 & ドメイン検証
   useEffect(() => {
@@ -768,11 +793,102 @@ export default function App() {
     else setSelectedElement(null);
   }, []);
 
+  const screenToFlow = useCallback((point) => {
+    if (!reactFlowInstance || !flowRef.current || !point) return null;
+    const rect = flowRef.current.getBoundingClientRect();
+    const { x: vx, y: vy, zoom } = reactFlowInstance.getViewport();
+    return {
+      x: (point.x - rect.left - vx) / zoom,
+      y: (point.y - rect.top - vy) / zoom,
+    };
+  }, [reactFlowInstance]);
+
+  const onConnectStart = useCallback((event, params) => {
+    // project() は snapToGrid で 1px に丸められてしまうので、生の座標を自分で逆変換する
+    const point = event ? screenToFlow({ x: event.clientX, y: event.clientY }) : null;
+    connectStartRef.current = { ...params, point };
+  }, [screenToFlow]);
+
   const onConnect = useCallback((params) => {
-    takeSnapshot(); 
-    const newEdge = { ...params, type: edgeType, style: { stroke: '#888888', strokeWidth: 1.5 }, markerEnd: showArrow ? 'custom-arrow-888888' : undefined };
-    setEdges((eds) => addEdge(newEdge, eds));
-  }, [edgeType, showArrow, takeSnapshot]);
+    takeSnapshot();
+
+    const sourceNode = reactFlowInstance ? reactFlowInstance.getNode(params.source) : null;
+    const targetNode = reactFlowInstance ? reactFlowInstance.getNode(params.target) : null;
+    const start = connectStartRef.current;
+
+    const { sourceAnchor, targetAnchor } = planConnect({
+      sourceType: sourceNode && sourceNode.type,
+      targetType: targetNode && targetNode.type,
+      sourceHandle: params.sourceHandle,
+      targetHandle: params.targetHandle,
+      sourceRect: nodeRect(sourceNode),
+      targetRect: nodeRect(targetNode),
+      sourceShapeType: sourceNode && sourceNode.data && sourceNode.data.shapeType,
+      // 図形の辺から引いたときは「掴んだ位置」をアンカーにする
+      sourceHandlePoint: (start && start.point) || null,
+      // 位置合わせには ReactFlow が計算した正確な始点（ハンドル中心）を使う
+      sourceOriginPoint: getConnectionFrame()
+        ? { x: getConnectionFrame().fromX, y: getConnectionFrame().fromY }
+        : null,
+      // 落とし位置は生のポインタ座標（ReactFlow は近くのハンドル中心に丸めてしまうため）
+      cursor: screenToFlow(pointerRef.current) || (getConnectionFrame()
+        ? { x: getConnectionFrame().toX, y: getConnectionFrame().toY }
+        : null),
+      alt: isAltDown(),
+    });
+
+    const edgeData = {};
+    if (sourceAnchor || targetAnchor) {
+      if (sourceAnchor) edgeData.sourceAnchor = sourceAnchor;
+      if (targetAnchor) edgeData.targetAnchor = targetAnchor;
+    }
+
+    const newEdge = {
+      ...params,
+      type: edgeType,
+      ...(Object.keys(edgeData).length > 0 ? { data: edgeData } : {}),
+      style: { stroke: '#888888', strokeWidth: 1.5 },
+      markerEnd: showArrow ? 'custom-arrow-888888' : undefined,
+    };
+
+    // 同じ辺の別の位置に引いた線は別の線として残す（位置が同じときだけ重複とみなす）
+    const sameAnchor = (a, b) => {
+      if (!a || !b) return !a && !b;
+      return a.side === b.side && Math.abs(a.t - b.t) < 0.01;
+    };
+
+    setEdges((eds) => {
+      const isDuplicate = eds.some(
+        (e) =>
+          e.source === params.source &&
+          e.target === params.target &&
+          e.sourceHandle === params.sourceHandle &&
+          e.targetHandle === params.targetHandle &&
+          sameAnchor(e.data && e.data.sourceAnchor, edgeData.sourceAnchor) &&
+          sameAnchor(e.data && e.data.targetAnchor, edgeData.targetAnchor)
+      );
+      if (isDuplicate) return eds;
+      if (!edgeData.sourceAnchor && !edgeData.targetAnchor) {
+        return addEdge(newEdge, eds);
+      }
+      const id = `edge-${params.source}-${params.target}-${Date.now().toString(36)}`;
+      return [...eds, { ...newEdge, id }];
+    });
+    connectStartRef.current = null;
+  }, [edgeType, showArrow, takeSnapshot, reactFlowInstance, screenToFlow]);
+
+  // プレビュー線から始点・終点を受け取る（確定時のアンカー計算に使う）
+  const handleConnectionFrame = useCallback((frame) => {
+    setConnectionFrame(frame);
+  }, []);
+
+  const connectionLineComponent = useMemo(
+    () =>
+      function ConnectionLine(props) {
+        return <CustomConnectionLine {...props} onFrame={handleConnectionFrame} />;
+      },
+    [handleConnectionFrame]
+  );
 
   // ★修正：テキストの背景を白にし、文字サイズを小さく保つ
   const onEdgeDoubleClick = useCallback((event, edge) => {
@@ -1681,10 +1797,11 @@ export default function App() {
       <div ref={flowRef} style={{ width: '100%', height: '100%' }}>
         <ReactFlow 
           onInit={setReactFlowInstance}
-          nodes={formattedNodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
+          nodes={formattedNodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onConnectStart={onConnectStart}
           onNodeContextMenu={onNodeContextMenu} onPaneClick={onPaneClick} onNodeDragStart={onNodeDragStart} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop}
           onSelectionChange={onSelectionChange} onEdgeDoubleClick={onEdgeDoubleClick} nodeTypes={nodeTypes} edgeTypes={edgeTypes} fitView style={{ background: 'transparent' }}
-          connectionLineType={edgeType} snapToGrid={true} snapGrid={[1, 1]}
+          connectionLineType="straight" connectionLineComponent={connectionLineComponent} snapToGrid={true} snapGrid={[1, 1]}
+          connectionMode={ConnectionMode.Loose}
           selectionKeyCode="Shift"
           selectionOnDrag={false}
           panOnDrag={true}

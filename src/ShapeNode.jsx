@@ -111,6 +111,7 @@ export default function ShapeNode({ id, data, selected, style }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          letterSpacing: 'normal',
           backgroundColor: data.backgroundColor || '#ffffff',
           border: `2px solid ${data.borderColor || '#333'}`,
           borderRadius: isCircle ? '50%' : shapeType === 'square' ? '0' : '4px',

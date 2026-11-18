@@ -46,10 +46,14 @@ export default function DeviceNode({ id, data, selected, style }) {
 
   const borderWidth = Math.max(1, scale);
   const padding = Math.max(1, 2 * scale);
+  // ポート行に本来の高さ（9*scale）を確保したうえで、残りをタイトルに充てる。
+  // タイトルは高さの 4 割強を上限、5px を下限にして、狭いノードでもポートが潰れないようにする。
+  const insetY = (borderWidth + padding) * 2;
+  const naturalPortsHeight = rows * 9 * scale;
   const titleHeight = clamp(
     currentHeight * (isCompact ? 0.4 : 0.44),
     5,
-    (isCompact ? 10 : 30) * scale
+    Math.max(5, currentHeight - insetY - naturalPortsHeight)
   );
   const contentWidth = Math.max(8, currentWidth - (borderWidth + padding) * 2);
   const portsHeight = Math.max(
@@ -64,6 +68,8 @@ export default function DeviceNode({ id, data, selected, style }) {
   const portMeasure = getTextMeasurer({ fontFamily });
 
   const nameText = `${data.manufacturer ? `${data.manufacturer} ` : ''}${data.model || ''}`.trim();
+  const genrePrefix = `[${safeGenre.charAt(0)}] `;
+  const displayName = isCompact ? `${genrePrefix}${nameText}` : data.model || '';
   const makerFit = fitText({
     text: data.manufacturer || '',
     boxW: contentWidth,
@@ -75,7 +81,7 @@ export default function DeviceNode({ id, data, selected, style }) {
     measure: makerMeasure,
   });
   const modelFit = fitText({
-    text: isCompact ? nameText : data.model || '',
+    text: displayName,
     boxW: contentWidth,
     boxH: Math.max(3, titleHeight * (data.manufacturer && !isCompact ? 0.62 : 0.95)),
     maxFontSize: Math.max(4, (isCompact ? 6 : 8) * scale),
@@ -210,6 +216,7 @@ export default function DeviceNode({ id, data, selected, style }) {
       <div
         style={{
           position: 'relative',
+          letterSpacing: 'normal',
           background: backgroundColor,
           border: `${borderWidth}px solid ${borderColor}`,
           borderRadius: '2px',
@@ -242,6 +249,7 @@ export default function DeviceNode({ id, data, selected, style }) {
           {!isCompact && data.manufacturer && (
             <div
               style={{
+                width: '100%',
                 fontSize: `${makerFit.fontSize}px`,
                 lineHeight: makerFit.lineHeight,
                 color: textColor,
@@ -249,6 +257,7 @@ export default function DeviceNode({ id, data, selected, style }) {
                 fontWeight: 'bold',
                 whiteSpace: 'pre',
                 overflow: 'hidden',
+                textAlign: 'center',
               }}
             >
               {makerFit.lines[0]}
@@ -256,6 +265,7 @@ export default function DeviceNode({ id, data, selected, style }) {
           )}
           <div
             style={{
+              width: '100%',
               fontSize: `${modelFit.fontSize}px`,
               lineHeight: modelFit.lineHeight,
               fontWeight: 'bold',
@@ -265,9 +275,6 @@ export default function DeviceNode({ id, data, selected, style }) {
               overflow: 'hidden',
             }}
           >
-            {isCompact && (
-              <span style={{ opacity: 0.6, fontWeight: 'normal' }}>[{safeGenre.charAt(0)}] </span>
-            )}
             {modelFit.lines.join('\n')}
           </div>
         </div>

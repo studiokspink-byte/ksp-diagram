@@ -104,6 +104,34 @@ export default function ShapeNode({ id, data, selected, style }) {
         />
       ))}
 
+      {data.comment ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 2px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#ffffe0',
+            border: '1px solid #ccc',
+            borderRadius: '1px',
+            padding: '0px 3px',
+            fontSize: `${Math.max(4, 6 * scale)}px`,
+            lineHeight: 1.2,
+            color: '#333',
+            width: 'max-content',
+            maxWidth: `${Math.max(40, currentW)}px`,
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+            textAlign: 'center',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+            zIndex: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          {data.comment}
+        </div>
+      ) : null}
+
       <div
         style={{
           width: '100%',

@@ -1495,7 +1495,7 @@ export default function App() {
   }, [nodes, genreColors]);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative', backgroundColor: '#e4e6e8', display: 'flex' }}>
+    <div style={{ width: '100%', height: '100vh', position: 'relative', backgroundColor: '#e4e6e8', display: 'flex' }}>
       
       <div className="no-print" style={{ position: 'absolute', top: 15, left: 15, zIndex: 10, display: 'flex', gap: '8px', alignItems: 'center', background: '#ffffff', padding: '8px 12px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', flexWrap: 'wrap', maxWidth: 'calc(100vw - 300px)' }}>
         {/* Google 認証・ユーザー情報 */}
@@ -1569,7 +1569,7 @@ export default function App() {
 
 
       {selectedElement && (
-        <div className="no-print" style={{ position: 'absolute', top: 15, right: 15, zIndex: 10, width: '250px', background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 15px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="no-print" style={{ position: 'fixed', top: 15, right: 15, zIndex: 20, width: '250px', background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 15px rgba(0,0,0,0.2)', maxHeight: 'calc(100vh - 30px)', overflowY: 'auto' }}>
           <h4 style={{ marginTop: 0, borderBottom: '2px solid #007bff', paddingBottom: '5px' }}>プロパティ編集</h4>
           
           {selectedElement.type === 'node' && selectedElement.data.type === 'device' && (
@@ -1605,6 +1605,7 @@ export default function App() {
                   {fontFamilies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
               </label>
+              <label style={{ fontSize: '12px' }}>コメント（図形の下に表示）: <textarea style={{ width: '100%', minHeight: '60px' }} onFocus={takeSnapshot} value={selectedElement.data.data.comment || ''} onChange={e => updateElementData({ comment: e.target.value })} placeholder="メモを記入..." /></label>
             </div>
           )}
 
@@ -1731,7 +1732,7 @@ export default function App() {
       )}
 
       {!selectedElement && (
-        <div className="no-print" style={{ position: 'absolute', top: 15, right: 15, zIndex: 10, width: '250px', background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 15px rgba(0,0,0,0.15)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="no-print" style={{ position: 'fixed', top: 15, right: 15, zIndex: 20, width: '250px', background: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 15px rgba(0,0,0,0.15)', maxHeight: 'calc(100vh - 30px)', overflowY: 'auto' }}>
           <h4 style={{ marginTop: 0, borderBottom: '2px solid #28a745', paddingBottom: '5px' }}>図面設定</h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <label style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
